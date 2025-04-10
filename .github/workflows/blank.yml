@@ -1,0 +1,62 @@
+import fitz  # PyMuPDF
+import re
+import requests
+from fpdf import FPDF
+
+def extraer_info_pdf(pdf_path):
+    doc = fitz.open(pdf_path)
+    texto = ""
+    for pagina in doc:
+        texto += pagina.get_text()
+    metadatos = doc.metadata
+    doc.close()
+    return texto, metadatos
+
+def buscar_doi(texto):
+    doi_pattern = r"(10.\d{4,9}/[-._;()/:A-Z0-9]+)"
+    matches = re.findall(doi_pattern, texto, re.IGNORECASE)
+    return matches
+
+def verificar_doi(doi):
+    url = f"https://api.crossref.org/works/{doi}"
+    resp = requests.get(url)
+    if resp.status_code == 200:
+        data = resp.json()
+        return {
+            "titulo": data['message'].get('title', ['Desconocido'])[0],
+            "autores": data['message'].get('author', []),
+            "revista": data['message'].get('container-title', ['Desconocida'])[0],
+            "fecha": data['message'].get('created', {}).get('date-time', 'Desconocida')
+        }
+    else:
+        return None
+
+def generar_informe(pdf_path, datos_doi, metadatos):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="Informe de Verificación - EticaIA", ln=True, align='C')
+    pdf.ln(10)
+
+    pdf.multi_cell(0, 10, f"Archivo: {pdf_path}")
+    pdf.multi_cell(0, 10, f"Metadatos del documento: {metadatos}")
+
+    if datos_doi:
+        pdf.multi_cell(0, 10, f"\nDOI encontrado y verificado: {datos_doi}")
+    else:
+        pdf.multi_cell(0, 10, "No se encontró un DOI válido o no fue verificado.")
+    
+    pdf.output("informe_verificacion.pdf")
+
+# Ejemplo de ejecución
+ruta_pdf = "ejemplo.pdf"
+texto, metadatos = extraer_info_pdf(ruta_pdf)
+dois_encontrados = buscar_doi(texto)
+
+if dois_encontrados:
+    datos_doi = verificar_doi(dois_encontrados[0]) 
+    
+else:
+    datos_doi = None
+
+generar_informe(ruta_pdf, datos_doi, metadatos)
